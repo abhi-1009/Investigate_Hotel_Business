@@ -92,4 +92,4 @@ Deployed on [Streamlit Community Cloud](https://share.streamlit.io):
 
 ## 👤 Author
 
-[Your Name] — [Course / Program Name]
+ABHIJIT SINHA 
