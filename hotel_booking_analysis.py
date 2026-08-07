@@ -12,6 +12,7 @@ st.set_page_config(
     page_title="Hotel Business Analysis",
     layout="wide",
 )
+
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------
@@ -66,15 +67,17 @@ if "hotel_filter" not in st.session_state:
     st.session_state["hotel_filter"] = ALL_HOTELS
 if "year_filter" not in st.session_state:
     st.session_state["year_filter"] = ALL_YEARS
+if "stay_slider" not in st.session_state:
+    st.session_state["stay_slider"] = 15
 
 def reset_filters():
     st.session_state["hotel_filter"] = ALL_HOTELS
     st.session_state["year_filter"] = ALL_YEARS
+    st.session_state["stay_slider"] = 15
 
 hotel_options = st.sidebar.multiselect(
     "Hotel type", options=ALL_HOTELS, key="hotel_filter"
 )
-
 year_options = st.sidebar.multiselect(
     "Arrival year", options=ALL_YEARS, key="year_filter"
 )
@@ -116,6 +119,7 @@ with tab1:
         guest dissatisfaction) or under-book (leaving rooms empty and revenue on the table).
         """
     )
+
     st.subheader("Business Questions")
     st.markdown(
         """
@@ -124,6 +128,7 @@ with tab1:
         3. **Does lead time (the gap between booking and arrival) affect the cancellation rate?**
         """
     )
+
     st.subheader("Project Objective")
     st.write(
         """
@@ -212,7 +217,7 @@ with tab2:
         st.plotly_chart(fig, use_container_width=True)
 
     with c2:
-        max_stay = st.slider("Max nights to display", 5, 30, 15)
+        max_stay = st.slider("Max nights to display", 5, 30, key="stay_slider")
         stay_cancel = (filtered[filtered["total_stay"] <= max_stay]
                        .groupby(["total_stay", "hotel"])["is_canceled"]
                        .mean().reset_index())
