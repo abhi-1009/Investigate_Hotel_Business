@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
 
 # ----------------------------------------------------------------------
 # Page config
@@ -11,11 +12,10 @@ st.set_page_config(
     page_title="Hotel Business Analysis",
     layout="wide",
 )
-
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------
-# Data loading + cleaning (same logic as the notebook, cached for speed)
+# Data loading + cleaning
 # ----------------------------------------------------------------------
 @st.cache_data
 def load_data():
@@ -46,7 +46,6 @@ def load_data():
     )
     return df
 
-
 df = load_data()
 
 MONTH_ORDER = [
@@ -59,14 +58,28 @@ MONTH_ORDER = [
 # ----------------------------------------------------------------------
 st.sidebar.header("Filters")
 
+ALL_HOTELS = sorted(df["hotel"].unique())
+ALL_YEARS = sorted(df["arrival_date_year"].unique())
+
+# Initialize session state defaults (only runs once per session)
+if "hotel_filter" not in st.session_state:
+    st.session_state["hotel_filter"] = ALL_HOTELS
+if "year_filter" not in st.session_state:
+    st.session_state["year_filter"] = ALL_YEARS
+
+def reset_filters():
+    st.session_state["hotel_filter"] = ALL_HOTELS
+    st.session_state["year_filter"] = ALL_YEARS
+
 hotel_options = st.sidebar.multiselect(
-    "Hotel type", options=sorted(df["hotel"].unique()), default=sorted(df["hotel"].unique())
+    "Hotel type", options=ALL_HOTELS, key="hotel_filter"
 )
 
 year_options = st.sidebar.multiselect(
-    "Arrival year", options=sorted(df["arrival_date_year"].unique()),
-    default=sorted(df["arrival_date_year"].unique())
+    "Arrival year", options=ALL_YEARS, key="year_filter"
 )
+
+st.sidebar.button("🔄 Reset Filters", on_click=reset_filters, use_container_width=True)
 
 filtered = df[df["hotel"].isin(hotel_options) & df["arrival_date_year"].isin(year_options)]
 
@@ -103,7 +116,6 @@ with tab1:
         guest dissatisfaction) or under-book (leaving rooms empty and revenue on the table).
         """
     )
-
     st.subheader("Business Questions")
     st.markdown(
         """
@@ -112,7 +124,6 @@ with tab1:
         3. **Does lead time (the gap between booking and arrival) affect the cancellation rate?**
         """
     )
-
     st.subheader("Project Objective")
     st.write(
         """
@@ -151,28 +162,35 @@ with tab2:
 
     st.markdown("---")
 
+    HOTEL_COLORS = {"City Hotel": "#4C72B0", "Resort Hotel": "#DD8452"}
+
     # Q1: Hotel type & seasonality
     st.header("1. Which hotel type is booked most often?")
     c1, c2 = st.columns([1, 2])
 
     with c1:
-        hotel_share = filtered["hotel"].value_counts()
-        fig, ax = plt.subplots()
-        ax.pie(hotel_share, labels=hotel_share.index, autopct="%1.1f%%",
-               colors=["#4C72B0", "#DD8452"], startangle=90)
-        ax.set_title("Share of Bookings by Hotel Type")
-        st.pyplot(fig)
+        hotel_share = filtered["hotel"].value_counts().reset_index()
+        hotel_share.columns = ["hotel", "count"]
+        fig = px.pie(
+            hotel_share, names="hotel", values="count",
+            color="hotel", color_discrete_map=HOTEL_COLORS,
+            title="Share of Bookings by Hotel Type", hole=0.0,
+        )
+        fig.update_traces(textinfo="percent+label", hovertemplate="%{label}<br>%{value:,} bookings<br>%{percent}")
+        st.plotly_chart(fig, use_container_width=True)
 
     with c2:
         monthly = (filtered.groupby(["arrival_date_month", "hotel"])
-                   .size().unstack(fill_value=0).reindex(MONTH_ORDER))
-        fig, ax = plt.subplots(figsize=(9, 4.2))
-        monthly.plot(kind="bar", ax=ax, color=["#4C72B0", "#DD8452"])
-        ax.set_title("Bookings per Month by Hotel Type")
-        ax.set_xlabel("Month")
-        ax.set_ylabel("Number of Bookings")
-        plt.xticks(rotation=45)
-        st.pyplot(fig)
+                   .size().reset_index(name="bookings"))
+        fig = px.bar(
+            monthly, x="arrival_date_month", y="bookings", color="hotel",
+            barmode="group", category_orders={"arrival_date_month": MONTH_ORDER},
+            color_discrete_map=HOTEL_COLORS,
+            title="Bookings per Month by Hotel Type",
+            labels={"arrival_date_month": "Month", "bookings": "Number of Bookings"},
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
 
@@ -181,42 +199,52 @@ with tab2:
     c1, c2 = st.columns(2)
 
     with c1:
-        cancel_by_hotel = filtered.groupby("hotel")["is_canceled"].mean() * 100
-        fig, ax = plt.subplots()
-        cancel_by_hotel.plot(kind="bar", ax=ax, color=["#4C72B0", "#DD8452"])
-        ax.set_title("Overall Cancellation Rate by Hotel Type")
-        ax.set_ylabel("Cancellation Rate (%)")
-        plt.xticks(rotation=0)
-        st.pyplot(fig)
+        cancel_by_hotel = (filtered.groupby("hotel")["is_canceled"].mean() * 100).reset_index()
+        cancel_by_hotel.columns = ["hotel", "cancel_rate"]
+        fig = px.bar(
+            cancel_by_hotel, x="hotel", y="cancel_rate", color="hotel",
+            color_discrete_map=HOTEL_COLORS,
+            title="Overall Cancellation Rate by Hotel Type",
+            labels={"cancel_rate": "Cancellation Rate (%)", "hotel": ""},
+            text_auto=".1f",
+        )
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
 
     with c2:
         max_stay = st.slider("Max nights to display", 5, 30, 15)
         stay_cancel = (filtered[filtered["total_stay"] <= max_stay]
                        .groupby(["total_stay", "hotel"])["is_canceled"]
-                       .mean().unstack() * 100)
-        fig, ax = plt.subplots()
-        stay_cancel.plot(marker="o", ax=ax, color=["#4C72B0", "#DD8452"])
-        ax.set_title("Cancellation Rate by Length of Stay")
-        ax.set_xlabel("Total Nights Stayed")
-        ax.set_ylabel("Cancellation Rate (%)")
-        st.pyplot(fig)
+                       .mean().reset_index())
+        stay_cancel["is_canceled"] *= 100
+        fig = px.line(
+            stay_cancel, x="total_stay", y="is_canceled", color="hotel",
+            markers=True, color_discrete_map=HOTEL_COLORS,
+            title="Cancellation Rate by Length of Stay",
+            labels={"total_stay": "Total Nights Stayed", "is_canceled": "Cancellation Rate (%)"},
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
 
     # Q3: Lead time vs cancellation
     st.header("3. Does lead time affect cancellation rate?")
     lead_cancel = (filtered.groupby(["lead_time_bucket", "hotel"], observed=True)["is_canceled"]
-                   .mean().unstack() * 100)
-    fig, ax = plt.subplots(figsize=(10, 4.5))
-    lead_cancel.plot(kind="bar", ax=ax, color=["#4C72B0", "#DD8452"])
-    ax.set_title("Cancellation Rate by Lead Time Bucket")
-    ax.set_xlabel("Lead Time (days before arrival)")
-    ax.set_ylabel("Cancellation Rate (%)")
-    plt.xticks(rotation=0)
-    st.pyplot(fig)
+                   .mean().reset_index())
+    lead_cancel["is_canceled"] *= 100
+    fig = px.bar(
+        lead_cancel, x="lead_time_bucket", y="is_canceled", color="hotel",
+        barmode="group", color_discrete_map=HOTEL_COLORS,
+        title="Cancellation Rate by Lead Time Bucket",
+        labels={"lead_time_bucket": "Lead Time (days before arrival)", "is_canceled": "Cancellation Rate (%)"},
+        text_auto=".1f",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
     with st.expander("View underlying numbers"):
-        st.dataframe(lead_cancel.round(1))
+        st.dataframe(
+            lead_cancel.pivot(index="lead_time_bucket", columns="hotel", values="is_canceled").round(1)
+        )
 
 # ========================================================================
 # TAB 3 — Insights & Recommendations
